@@ -3,142 +3,219 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>Camicia e Oltre - Virtual Try On</title>
+
 <style>
-html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:Arial,sans-serif}
-#video{display:none}
-#canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-#loading{position:absolute;z-index:20;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.75);color:#fff;padding:20px 28px;border-radius:15px;text-align:center}
-#info{position:absolute;z-index:20;bottom:25px;left:50%;transform:translateX(-50%);color:#fff;background:rgba(0,0,0,.65);padding:12px 20px;border-radius:30px;font-size:14px}
+html,body{
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#000;
+    font-family:Arial,sans-serif;
+}
+
+#video{
+    position:absolute;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    transform:scaleX(-1);
+}
+
+#message{
+    position:absolute;
+    z-index:10;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    background:rgba(0,0,0,.8);
+    color:white;
+    padding:25px;
+    border-radius:15px;
+    text-align:center;
+    max-width:85%;
+}
+
+button{
+    margin-top:15px;
+    padding:14px 25px;
+    border:0;
+    border-radius:30px;
+    font-size:16px;
+    cursor:pointer;
+}
 </style>
 </head>
+
 <body>
-<video id="video" autoplay playsinline></video>
-<canvas id="canvas"></canvas>
-<div id="loading">Caricamento Virtual Try On...</div>
-<div id="info">LIVE — tracking corpo attivo</div>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+
+<video id="video" autoplay playsinline muted></video>
+
+<div id="message">
+    <div id="text">
+        Premi il pulsante per aprire la fotocamera
+    </div>
+
+    <button id="start">
+        📷 Apri fotocamera
+    </button>
+</div>
+
+
 <script>
-const video=document.getElementById('video'),canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d'),loading=document.getElementById('loading');
-const shirt=new Image(); shirt.src='./camicia.png';
-let W=1280,H=720,lastPose=null;
 
-async function startCamera(){
- try{
-  const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});
-  video.srcObject=stream; await video.play();
-  W=video.videoWidth; H=video.videoHeight; canvas.width=W; canvas.height=H;
-  loading.innerHTML='Rilevamento del corpo...'; pose.start();
- }catch(error){
-  console.error(error);
-  loading.innerHTML='⚠️ Permesso fotocamera negato.<br><br>Consenti l\'accesso alla fotocamera.';
- }
+const video = document.getElementById("video");
+const message = document.getElementById("message");
+const text = document.getElementById("text");
+const start = document.getElementById("start");
+
+
+async function openCamera(){
+
+    text.innerHTML = "Richiesta accesso alla fotocamera...";
+    start.style.display = "none";
+
+
+    /*
+       Controlliamo che il browser supporti
+       la fotocamera.
+    */
+
+    if(!navigator.mediaDevices){
+
+        text.innerHTML =
+            "❌ Questo browser non permette l'accesso alla fotocamera.<br><br>" +
+            "Prova ad aprire il sito direttamente in Safari.";
+
+        return;
+    }
+
+
+    if(!navigator.mediaDevices.getUserMedia){
+
+        text.innerHTML =
+            "❌ La fotocamera non è disponibile in questo browser.";
+
+        return;
+    }
+
+
+    try{
+
+        const stream =
+            await navigator.mediaDevices.getUserMedia({
+
+                video:{
+                    facingMode:"user",
+
+                    width:{
+                        ideal:1280
+                    },
+
+                    height:{
+                        ideal:720
+                    }
+                },
+
+                audio:false
+
+            });
+
+
+        /*
+           Se arriviamo qui,
+           la fotocamera è autorizzata.
+        */
+
+        video.srcObject = stream;
+
+        await video.play();
+
+
+        message.style.display = "none";
+
+
+        console.log(
+            "CAMERA OK"
+        );
+
+
+    }catch(error){
+
+        console.error(
+            "ERRORE FOTOCAMERA:",
+            error
+        );
+
+
+        start.style.display = "inline-block";
+
+
+        /*
+           Mostriamo l'errore REALE.
+        */
+
+        let errorText =
+            error.name +
+            "<br><br>" +
+            (error.message || "Nessun dettaglio disponibile");
+
+
+        if(error.name === "NotAllowedError"){
+
+            errorText +=
+                "<br><br>" +
+                "Il browser sta bloccando l'accesso alla fotocamera. " +
+                "Controlla il permesso per questo sito.";
+
+        }
+
+
+        if(error.name === "NotFoundError"){
+
+            errorText +=
+                "<br><br>" +
+                "Non è stata trovata nessuna fotocamera.";
+
+        }
+
+
+        if(error.name === "NotReadableError"){
+
+            errorText +=
+                "<br><br>" +
+                "La fotocamera è utilizzata da un'altra applicazione.";
+
+        }
+
+
+        if(error.name === "SecurityError"){
+
+            errorText +=
+                "<br><br>" +
+                "Il browser non considera questa pagina autorizzata.";
+
+        }
+
+
+        text.innerHTML =
+            "❌ Errore fotocamera<br><br>" +
+            errorText;
+
+    }
+
 }
 
-const pose=new Pose({locateFile:file=>'https://cdn.jsdelivr.net/npm/@mediapipe/pose/'+file});
-pose.setOptions({modelComplexity:2,smoothLandmarks:true,enableSegmentation:false,minDetectionConfidence:.55,minTrackingConfidence:.55});
-pose.onResults(results=>{if(results.poseLandmarks)lastPose=results.poseLandmarks;});
 
-function px(p){return{x:(1-p.x)*W,y:p.y*H}}
-function distance(a,b){return Math.hypot(b.x-a.x,b.y-a.y)}
-function lerp(a,b,t){return a+(b-a)*t}
+start.addEventListener(
+    "click",
+    openCamera
+);
 
-function drawVideo(){
- ctx.save();ctx.translate(W,0);ctx.scale(-1,1);ctx.drawImage(video,0,0,W,H);ctx.restore();
-}
-
-function drawShirt(points){
- const LS=px(points[11]),RS=px(points[12]),LH=px(points[23]),RH=px(points[24]);
- const shoulderWidth=distance(LS,RS),hipWidth=distance(LH,RH);
- const centerTop={x:(LS.x+RS.x)/2,y:(LS.y+RS.y)/2};
- const centerBottom={x:(LH.x+RH.x)/2,y:(LH.y+RH.y)/2};
-
- // CORREZIONE PRINCIPALE:
- // portiamo la parte alta della camicia sopra la linea delle spalle,
- // in modo che il colletto cada sul collo e non sul petto.
- const topWidth=shoulderWidth*1.48;
- const bottomWidth=Math.max(hipWidth*1.35,shoulderWidth*1.30);
- const torsoHeight=distance(centerTop,centerBottom)*1.34;
- const angle=Math.atan2(RS.y-LS.y,RS.x-LS.x);
- const ux=Math.cos(angle),uy=Math.sin(angle),vx=-uy,vy=ux;
-
- const topCenter={
-   x:centerTop.x-vx*shoulderWidth*.27,
-   y:centerTop.y-vy*shoulderWidth*.27
- };
- const bottomCenter={
-   x:topCenter.x+vx*torsoHeight,
-   y:topCenter.y+vy*torsoHeight
- };
-
- const TL={x:topCenter.x-ux*topWidth/2,y:topCenter.y-uy*topWidth/2};
- const TR={x:topCenter.x+ux*topWidth/2,y:topCenter.y+uy*topWidth/2};
- const BL={x:bottomCenter.x-ux*bottomWidth/2,y:bottomCenter.y-uy*bottomWidth/2};
- const BR={x:bottomCenter.x+ux*bottomWidth/2,y:bottomCenter.y+uy*bottomWidth/2};
-
- const rows=10,cols=6;
- function point(u,v){
-  const tx=lerp(TL.x,TR.x,u),ty=lerp(TL.y,TR.y,u);
-  const bx=lerp(BL.x,BR.x,u),by=lerp(BL.y,BR.y,u);
-  return{x:lerp(tx,bx,v),y:lerp(ty,by,v)};
- }
-
- for(let r=0;r<rows;r++){
-  const t1=r/rows,t2=(r+1)/rows;
-  for(let c=0;c<cols;c++){
-   const s1=c/cols,s2=(c+1)/cols;
-   const p00=point(s1,t1),p10=point(s2,t1),p01=point(s1,t2),p11=point(s2,t2);
-   const sx1=shirt.width*s1,sx2=shirt.width*s2,sy1=shirt.height*t1,sy2=shirt.height*t2;
-   drawTriangle(sx1,sy1,sx2,sy1,sx1,sy2,p00,p10,p01);
-   drawTriangle(sx2,sy1,sx2,sy2,sx1,sy2,p10,p11,p01);
-  }
- }
-}
-
-function drawTriangle(sx0,sy0,sx1,sy1,sx2,sy2,p0,p1,p2){
- const denom=sx0*(sy1-sy2)+sx1*(sy2-sy0)+sx2*(sy0-sy1);
- if(Math.abs(denom)<.001)return;
- const a=(p0.x*(sy1-sy2)+p1.x*(sy2-sy0)+p2.x*(sy0-sy1))/denom;
- const b=(p0.y*(sy1-sy2)+p1.y*(sy2-sy0)+p2.y*(sy0-sy1))/denom;
- const c=(p0.x*(sx2-sx1)+p1.x*(sx0-sx2)+p2.x*(sx1-sx0))/denom;
- const d=(p0.y*(sx2-sx1)+p1.y*(sx0-sx2)+p2.y*(sx1-sx0))/denom;
- const e=(p0.x*(sx1*sy2-sx2*sy1)+p1.x*(sx2*sy0-sx0*sy2)+p2.x*(sx0*sy1-sx1*sy0))/denom;
- const f=(p0.y*(sx1*sy2-sx2*sy1)+p1.y*(sx2*sy0-sx0*sy2)+p2.y*(sx0*sy1-sx1*sy0))/denom;
- ctx.save();
- ctx.beginPath();ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.closePath();ctx.clip();
- ctx.setTransform(a,b,c,d,e,f);ctx.drawImage(shirt,0,0);ctx.restore();
-}
-
-function drawArm(points,a,b){
- if(!points[a]||!points[b])return;
- const A=px(points[a]),B=px(points[b]),width=Math.max(distance(A,B)*.34,28);
- const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy)||1,nx=-dy/len*width,ny=dx/len*width;
- ctx.save();ctx.beginPath();
- ctx.moveTo(A.x+nx,A.y+ny);ctx.lineTo(B.x+nx*.78,B.y+ny*.78);ctx.lineTo(B.x-nx*.78,B.y-ny*.78);ctx.lineTo(A.x-nx,A.y-ny);ctx.closePath();ctx.clip();
- ctx.save();ctx.translate(W,0);ctx.scale(-1,1);ctx.drawImage(video,0,0,W,H);ctx.restore();ctx.restore();
-}
-
-function drawHead(points){
- const nose=points[0];if(!nose)return;
- const P=px(nose),radius=W*.13;
- ctx.save();ctx.beginPath();ctx.arc(P.x,P.y,radius,0,Math.PI*2);ctx.clip();
- ctx.save();ctx.translate(W,0);ctx.scale(-1,1);ctx.drawImage(video,0,0,W,H);ctx.restore();ctx.restore();
-}
-
-function render(){
- if(video.readyState>=2){
-  ctx.setTransform(1,0,0,1,0,0);drawVideo();
-  if(lastPose&&shirt.complete){
-   drawShirt(lastPose);
-   drawArm(lastPose,11,13);drawArm(lastPose,13,15);drawArm(lastPose,12,14);drawArm(lastPose,14,16);
-   drawHead(lastPose);loading.style.display='none';
-  }
- }
- requestAnimationFrame(render);
-}
-
-shirt.onload=()=>{startCamera();render()};
-shirt.onerror=()=>{loading.innerHTML='❌ Non trovo camicia.png<br><br>Controlla che sia nella stessa cartella di index.html.'};
 </script>
+
 </body>
 </html>
