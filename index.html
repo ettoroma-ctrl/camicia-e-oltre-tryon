@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Camicia e Oltre - Virtual Try On</title>
+<title>Test Body Tracking</title>
 
 <style>
 html,body{
@@ -13,12 +13,10 @@ html,body{
     height:100%;
     overflow:hidden;
     background:#000;
-    font-family:Arial,sans-serif;
 }
 
 #video{
     position:absolute;
-    inset:0;
     width:100%;
     height:100%;
     object-fit:cover;
@@ -30,43 +28,20 @@ html,body{
     inset:0;
     width:100%;
     height:100%;
-    pointer-events:none;
 }
 
-#message{
+#box{
     position:absolute;
-    z-index:20;
+    z-index:10;
     left:50%;
-    top:50%;
-    transform:translate(-50%,-50%);
-    background:rgba(0,0,0,.82);
-    color:white;
-    padding:25px;
-    border-radius:18px;
-    text-align:center;
-    max-width:85%;
-}
-
-#start{
-    margin-top:18px;
-    padding:14px 25px;
-    border:0;
-    border-radius:30px;
-    font-size:17px;
-    cursor:pointer;
-}
-
-#status{
-    position:absolute;
-    z-index:15;
-    bottom:20px;
-    left:50%;
+    top:30px;
     transform:translateX(-50%);
+    background:rgba(0,0,0,.75);
     color:white;
-    background:rgba(0,0,0,.65);
-    padding:10px 18px;
+    padding:12px 20px;
     border-radius:25px;
-    font-size:14px;
+    font-family:Arial;
+    text-align:center;
 }
 </style>
 </head>
@@ -77,90 +52,49 @@ html,body{
 
 <canvas id="canvas"></canvas>
 
-<div id="message">
-
-    <div id="messageText">
-        Virtual Try-On
-    </div>
-
-    <button id="start">
-        📷 Apri fotocamera
-    </button>
-
+<div id="box">
+    <button id="start">📷 Apri fotocamera</button>
+    <div id="status"></div>
 </div>
 
-<div id="status">
-    In attesa della fotocamera...
-</div>
-
-
-<!-- MediaPipe Pose -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-
 
 <script>
 
 const video =
-    document.getElementById("video");
+document.getElementById("video");
 
 const canvas =
-    document.getElementById("canvas");
+document.getElementById("canvas");
 
 const ctx =
-    canvas.getContext("2d");
+canvas.getContext("2d");
 
-const message =
-    document.getElementById("message");
-
-const messageText =
-    document.getElementById("messageText");
-
-const startButton =
-    document.getElementById("start");
+const start =
+document.getElementById("start");
 
 const status =
-    document.getElementById("status");
+document.getElementById("status");
+
+let W=1280;
+let H=720;
+
+let landmarks=null;
 
 
-/* ==========================================
-   CAMICIA
-========================================== */
-
-const shirt =
-    new Image();
-
-shirt.src =
-    "./camicia.png";
-
-
-/* ==========================================
-   VARIABILI
-========================================== */
-
-let W = 1280;
-let H = 720;
-
-let poseLandmarks = null;
-
-let cameraStream = null;
-
-
-/* ==========================================
+/* =========================
    MEDIAPIPE
-========================================== */
+========================= */
 
-const pose =
-    new Pose({
+const pose = new Pose({
 
-        locateFile:function(file){
+    locateFile:function(file){
 
-            return
-            "https://cdn.jsdelivr.net/npm/@mediapipe/pose/"
-            + file;
+        return "https://cdn.jsdelivr.net/npm/@mediapipe/pose/" + file;
 
-        }
+    }
 
-    });
+});
 
 
 pose.setOptions({
@@ -169,13 +103,11 @@ pose.setOptions({
 
     smoothLandmarks:true,
 
-    enableSegmentation:true,
+    enableSegmentation:false,
 
-    smoothSegmentation:true,
+    minDetectionConfidence:.5,
 
-    minDetectionConfidence:.55,
-
-    minTrackingConfidence:.55
+    minTrackingConfidence:.5
 
 });
 
@@ -184,111 +116,82 @@ pose.onResults(function(results){
 
     if(results.poseLandmarks){
 
-        poseLandmarks =
-            results.poseLandmarks;
+        landmarks =
+        results.poseLandmarks;
+
+        status.innerHTML =
+        "✅ CORPO RICONOSCIUTO";
+
+    }else{
+
+        landmarks=null;
+
+        status.innerHTML =
+        "🧍 Corpo non riconosciuto";
 
     }
 
 });
 
 
-/* ==========================================
-   APRI FOTOCAMERA
-========================================== */
+/* =========================
+   CAMERA
+========================= */
 
 async function startCamera(){
 
     try{
 
-        messageText.innerHTML =
-            "Richiesta accesso alla fotocamera...";
+        const stream =
+        await navigator.mediaDevices.getUserMedia({
 
-        startButton.style.display =
-            "none";
+            video:{
+                facingMode:"user",
+                width:{ideal:1280},
+                height:{ideal:720}
+            },
 
+            audio:false
 
-        cameraStream =
-            await navigator.mediaDevices.getUserMedia({
-
-                video:{
-                    facingMode:"user",
-
-                    width:{
-                        ideal:1280
-                    },
-
-                    height:{
-                        ideal:720
-                    }
-                },
-
-                audio:false
-
-            });
+        });
 
 
-        video.srcObject =
-            cameraStream;
-
+        video.srcObject=stream;
 
         await video.play();
 
 
-        W =
-            video.videoWidth;
+        W=video.videoWidth;
+        H=video.videoHeight;
 
-        H =
-            video.videoHeight;
-
-
-        canvas.width =
-            W;
-
-        canvas.height =
-            H;
+        canvas.width=W;
+        canvas.height=H;
 
 
-        message.style.display =
-            "none";
+        start.style.display="none";
 
 
-        status.innerHTML =
-            "Rilevamento corpo...";
-
-
-        /*
-           Avviamo MediaPipe
-        */
-
-        processCamera();
-
+        process();
 
     }catch(error){
 
+        status.innerHTML =
+        "❌ "+error.name;
+
         console.error(error);
-
-        startButton.style.display =
-            "inline-block";
-
-        messageText.innerHTML =
-            "❌ Fotocamera non disponibile<br><br>" +
-            error.name;
 
     }
 
 }
 
 
-/* ==========================================
-   PROCESSAMENTO CAMERA
-========================================== */
+/* =========================
+   MEDIAPIPE LOOP
+========================= */
 
-async function processCamera(){
+async function process(){
 
-    if(
-        video.readyState >= 2 &&
-        video.videoWidth > 0
-    ){
+    if(video.readyState>=2){
 
         await pose.send({
             image:video
@@ -296,705 +199,138 @@ async function processCamera(){
 
     }
 
-    requestAnimationFrame(
-        processCamera
-    );
+    requestAnimationFrame(process);
 
 }
 
 
-/* ==========================================
-   COORDINATE
-========================================== */
-
-function point(p){
-
-    return {
-
-        x:(1-p.x)*W,
-
-        y:p.y*H
-
-    };
-
-}
-
-
-function distance(a,b){
-
-    return Math.hypot(
-
-        b.x-a.x,
-
-        b.y-a.y
-
-    );
-
-}
-
-
-/* ==========================================
-   INTERPOLAZIONE
-========================================== */
-
-function lerp(a,b,t){
-
-    return a+(b-a)*t;
-
-}
-
-
-/* ==========================================
-   VIDEO
-========================================== */
-
-function drawVideo(){
-
-    ctx.save();
-
-    ctx.clearRect(
-        0,
-        0,
-        W,
-        H
-    );
-
-    ctx.translate(
-        W,
-        0
-    );
-
-    ctx.scale(
-        -1,
-        1
-    );
-
-    ctx.drawImage(
-
-        video,
-
-        0,
-        0,
-        W,
-        H
-
-    );
-
-    ctx.restore();
-
-}
-
-
-/* ==========================================
-   CAMICIA DEFORMATA
-========================================== */
-
-function drawShirt(){
-
-    if(
-        !poseLandmarks ||
-        !shirt.complete ||
-        shirt.naturalWidth === 0
-    ){
-
-        return;
-
-    }
-
-
-    /*
-       MediaPipe:
-
-       11 = spalla sinistra
-       12 = spalla destra
-       23 = fianco sinistro
-       24 = fianco destro
-    */
-
-    const LS =
-        point(poseLandmarks[11]);
-
-    const RS =
-        point(poseLandmarks[12]);
-
-    const LH =
-        point(poseLandmarks[23]);
-
-    const RH =
-        point(poseLandmarks[24]);
-
-
-    const shoulderWidth =
-        distance(
-            LS,
-            RS
-        );
-
-
-    const hipWidth =
-        distance(
-            LH,
-            RH
-        );
-
-
-    const centerTop = {
-
-        x:(LS.x+RS.x)/2,
-
-        y:(LS.y+RS.y)/2
-
-    };
-
-
-    const centerBottom = {
-
-        x:(LH.x+RH.x)/2,
-
-        y:(LH.y+RH.y)/2
-
-    };
-
-
-    /*
-       Ingrandiamo leggermente
-       il capo.
-    */
-
-    const topWidth =
-        shoulderWidth * 1.42;
-
-
-    const bottomWidth =
-        Math.max(
-
-            hipWidth * 1.30,
-
-            shoulderWidth * 1.20
-
-        );
-
-
-    /*
-       Altezza del busto.
-    */
-
-    const torsoHeight =
-        distance(
-
-            centerTop,
-
-            centerBottom
-
-        ) * 1.25;
-
-
-    /*
-       Inclinazione delle spalle.
-    */
-
-    const angle =
-        Math.atan2(
-
-            RS.y-LS.y,
-
-            RS.x-LS.x
-
-        );
-
-
-    const ux =
-        Math.cos(angle);
-
-    const uy =
-        Math.sin(angle);
-
-
-    const vx =
-        -uy;
-
-    const vy =
-        ux;
-
-
-    /*
-       Portiamo la camicia
-       leggermente verso il collo.
-    */
-
-    const topCenter = {
-
-        x:centerTop.x
-          -vx*shoulderWidth*.22,
-
-        y:centerTop.y
-          -vy*shoulderWidth*.22
-
-    };
-
-
-    const bottomCenter = {
-
-        x:topCenter.x
-          +vx*torsoHeight,
-
-        y:topCenter.y
-          +vy*torsoHeight
-
-    };
-
-
-    /*
-       Quattro angoli.
-    */
-
-    const TL = {
-
-        x:topCenter.x
-          -ux*topWidth/2,
-
-        y:topCenter.y
-          -uy*topWidth/2
-
-    };
-
-
-    const TR = {
-
-        x:topCenter.x
-          +ux*topWidth/2,
-
-        y:topCenter.y
-          +uy*topWidth/2
-
-    };
-
-
-    const BL = {
-
-        x:bottomCenter.x
-          -ux*bottomWidth/2,
-
-        y:bottomCenter.y
-          -uy*bottomWidth/2
-
-    };
-
-
-    const BR = {
-
-        x:bottomCenter.x
-          +ux*bottomWidth/2,
-
-        y:bottomCenter.y
-          +uy*bottomWidth/2
-
-    };
-
-
-    /*
-       Mesh.
-    */
-
-    const rows = 12;
-
-    const cols = 8;
-
-
-    function meshPoint(u,v){
-
-        const topX =
-            lerp(
-                TL.x,
-                TR.x,
-                u
-            );
-
-        const topY =
-            lerp(
-                TL.y,
-                TR.y,
-                u
-            );
-
-
-        const bottomX =
-            lerp(
-                BL.x,
-                BR.x,
-                u
-            );
-
-        const bottomY =
-            lerp(
-                BL.y,
-                BR.y,
-                u
-            );
-
-
-        return {
-
-            x:lerp(
-                topX,
-                bottomX,
-                v
-            ),
-
-            y:lerp(
-                topY,
-                bottomY,
-                v
-            )
-
-        };
-
-    }
-
-
-    for(
-        let r=0;
-        r<rows;
-        r++
-    ){
-
-        const v1 =
-            r/rows;
-
-        const v2 =
-            (r+1)/rows;
-
-
-        for(
-            let c=0;
-            c<cols;
-            c++
-        ){
-
-            const u1 =
-                c/cols;
-
-            const u2 =
-                (c+1)/cols;
-
-
-            const p00 =
-                meshPoint(
-                    u1,
-                    v1
-                );
-
-            const p10 =
-                meshPoint(
-                    u2,
-                    v1
-                );
-
-            const p01 =
-                meshPoint(
-                    u1,
-                    v2
-                );
-
-            const p11 =
-                meshPoint(
-                    u2,
-                    v2
-                );
-
-
-            const sx1 =
-                shirt.naturalWidth*u1;
-
-            const sx2 =
-                shirt.naturalWidth*u2;
-
-            const sy1 =
-                shirt.naturalHeight*v1;
-
-            const sy2 =
-                shirt.naturalHeight*v2;
-
-
-            drawTriangle(
-
-                sx1,
-                sy1,
-
-                sx2,
-                sy1,
-
-                sx1,
-                sy2,
-
-                p00,
-                p10,
-                p01
-
-            );
-
-
-            drawTriangle(
-
-                sx2,
-                sy1,
-
-                sx2,
-                sy2,
-
-                sx1,
-                sy2,
-
-                p10,
-                p11,
-                p01
-
-            );
-
-        }
-
-    }
-
-}
-
-
-/* ==========================================
-   TRIANGOLI
-========================================== */
-
-function drawTriangle(
-
-    sx0,
-    sy0,
-
-    sx1,
-    sy1,
-
-    sx2,
-    sy2,
-
-    p0,
-    p1,
-    p2
-
-){
-
-    const denominator =
-
-        sx0*(sy1-sy2) +
-
-        sx1*(sy2-sy0) +
-
-        sx2*(sy0-sy1);
-
-
-    if(
-        Math.abs(denominator)
-        < .001
-    ){
-
-        return;
-
-    }
-
-
-    const a =
-
-        (
-            p0.x*(sy1-sy2) +
-
-            p1.x*(sy2-sy0) +
-
-            p2.x*(sy0-sy1)
-
-        )
-        /denominator;
-
-
-    const b =
-
-        (
-            p0.y*(sy1-sy2) +
-
-            p1.y*(sy2-sy0) +
-
-            p2.y*(sy0-sy1)
-
-        )
-        /denominator;
-
-
-    const c =
-
-        (
-            p0.x*(sx2-sx1) +
-
-            p1.x*(sx0-sx2) +
-
-            p2.x*(sx1-sx0)
-
-        )
-        /denominator;
-
-
-    const d =
-
-        (
-            p0.y*(sx2-sx1) +
-
-            p1.y*(sx0-sx2) +
-
-            p2.y*(sx1-sx0)
-
-        )
-        /denominator;
-
-
-    const e =
-
-        (
-            p0.x*(sx1*sy2-sx2*sy1) +
-
-            p1.x*(sx2*sy0-sx0*sy2) +
-
-            p2.x*(sx0*sy1-sx1*sy0)
-
-        )
-        /denominator;
-
-
-    const f =
-
-        (
-            p0.y*(sx1*sy2-sx2*sy1) +
-
-            p1.y*(sx2*sy0-sx0*sy2) +
-
-            p2.y*(sx0*sy1-sx1*sy0)
-
-        )
-        /denominator;
-
-
-    ctx.save();
-
-
-    ctx.beginPath();
-
-    ctx.moveTo(
-        p0.x,
-        p0.y
-    );
-
-    ctx.lineTo(
-        p1.x,
-        p1.y
-    );
-
-    ctx.lineTo(
-        p2.x,
-        p2.y
-    );
-
-    ctx.closePath();
-
-    ctx.clip();
-
-
-    ctx.setTransform(
-
-        a,
-        b,
-        c,
-        d,
-        e,
-        f
-
-    );
-
-
-    ctx.drawImage(
-
-        shirt,
-
-        0,
-        0
-
-    );
-
-
-    ctx.restore();
-
-}
-
-
-/* ==========================================
-   LOOP GRAFICO
-========================================== */
+/* =========================
+   DISEGNO
+========================= */
 
 function render(){
 
-    if(
-        video.readyState >= 2
-    ){
+    ctx.clearRect(0,0,W,H);
+
+
+    /*
+       Punti del corpo
+    */
+
+    if(landmarks){
+
+        const connections=[
+
+            [11,12],
+
+            [11,13],
+            [13,15],
+
+            [12,14],
+            [14,16],
+
+            [11,23],
+            [12,24],
+
+            [23,24],
+
+            [23,25],
+            [25,27],
+
+            [24,26],
+            [26,28]
+
+        ];
+
 
         /*
-           Prima disegniamo
-           la fotocamera.
+           LINEE
         */
 
-        drawVideo();
+        ctx.strokeStyle="lime";
+
+        ctx.lineWidth=5;
+
+        connections.forEach(function(pair){
+
+            const a=
+            landmarks[pair[0]];
+
+            const b=
+            landmarks[pair[1]];
+
+
+            const ax=
+            (1-a.x)*W;
+
+            const ay=
+            a.y*H;
+
+
+            const bx=
+            (1-b.x)*W;
+
+            const by=
+            b.y*H;
+
+
+            ctx.beginPath();
+
+            ctx.moveTo(ax,ay);
+
+            ctx.lineTo(bx,by);
+
+            ctx.stroke();
+
+        });
 
 
         /*
-           Poi la camicia.
+           PUNTI
         */
 
-        if(
-            poseLandmarks
-        ){
-
-            drawShirt();
+        ctx.fillStyle="red";
 
 
-            status.innerHTML =
-                "👕 Camicia in prova";
+        landmarks.forEach(function(p){
 
-        }else{
+            if(p.visibility>.5){
 
-            status.innerHTML =
-                "🧍 Posizionati davanti alla fotocamera";
+                const x=
+                (1-p.x)*W;
 
-        }
+                const y=
+                p.y*H;
+
+
+                ctx.beginPath();
+
+                ctx.arc(
+                    x,
+                    y,
+                    7,
+                    0,
+                    Math.PI*2
+                );
+
+                ctx.fill();
+
+            }
+
+        });
 
     }
 
 
-    requestAnimationFrame(
-        render
-    );
+    requestAnimationFrame(render);
 
 }
 
 
-/* ==========================================
-   AVVIO
-========================================== */
-
-startButton.addEventListener(
-
-    "click",
-
-    startCamera
-
+start.addEventListener(
+"click",
+startCamera
 );
-
-
-shirt.onload = function(){
-
-    render();
-
-};
 
 
 render();
