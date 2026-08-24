@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Camicia e Oltre — Live Try-On</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#111;color:#fff;font-family:Arial,sans-serif}
+header{height:54px;padding:15px 18px;background:#000;font-weight:700}
+#stage{position:relative;width:100vw;height:calc(100vh - 54px);overflow:hidden;background:#222}
+video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+video{transform:scaleX(-1)}canvas{z-index:2}
+.panel{position:absolute;z-index:4;left:50%;bottom:18px;transform:translateX(-50%);
+background:rgba(0,0,0,.78);padding:14px;border-radius:14px;text-align:center;width:min(92vw,430px)}
+button{border:0;border-radius:10px;padding:12px 20px;font-weight:700;cursor:pointer}
+#status{font-size:12px;margin-top:9px;opacity:.85}
+</style>
+</head>
+<body>
+<header>CAMICIA E OLTRE — LIVE TRY-ON</header>
+<div id="stage">
+<video id="video" playsinline muted></video>
+<canvas id="canvas"></canvas>
+<div class="panel">
+<button id="start">📷 Apri fotocamera</button>
+<div id="status">Consenti l'accesso alla fotocamera per iniziare.</div>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script>
+const video=document.getElementById('video'), canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d'), start=document.getElementById('start'), status=document.getElementById('status');
+const shirt=new Image(); shirt.src='./camicia.png';
+
+function resize(){canvas.width=video.videoWidth||1280;canvas.height=video.videoHeight||720}
+function pt(i,lm){return {x:(1-lm[i].x)*canvas.width,y:lm[i].y*canvas.height}}
+
+const pose=new Pose({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`});
+pose.setOptions({modelComplexity:1,smoothLandmarks:true,minDetectionConfidence:.55,minTrackingConfidence:.55});
+
+pose.onResults(r=>{
+  if(!video.videoWidth)return;
+  resize(); ctx.clearRect(0,0,canvas.width,canvas.height);
+  const lm=r.poseLandmarks;
+  if(!lm){status.textContent='Mettiti davanti alla fotocamera mostrando spalle e busto.';return}
+  const ls=pt(11,lm), rs=pt(12,lm), lh=pt(23,lm), rh=pt(24,lm);
+  const cx=(ls.x+rs.x)/2, cy=(ls.y+rs.y)/2;
+  const shoulder=Math.hypot(ls.x-rs.x,ls.y-rs.y);
+  const bottom=Math.max(lh.y,rh.y);
+  const w=shoulder*1.65, h=Math.max(shoulder*2.15,bottom-cy+shoulder*.9);
+  const angle=Math.atan2(rs.y-ls.y,rs.x-ls.x);
+  ctx.save(); ctx.translate(cx,cy+shoulder*.9); ctx.rotate(angle);
+  ctx.globalAlpha=.94;
+  if(shirt.complete)ctx.drawImage(shirt,-w/2,-h*.42,w,h);
+  ctx.restore();
+  status.textContent='LIVE — tracking corpo attivo';
+});
+
+start.onclick=async()=>{
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false
+    });
+    video.srcObject=stream; await video.play(); resize();
+    const camera=new Camera(video,{onFrame:async()=>pose.send({image:video}),width:1280,height:720});
+    camera.start(); start.textContent='Fotocamera attiva'; start.disabled=true;
+    status.textContent='Avvio del tracking…';
+  }catch(e){status.textContent='Impossibile aprire la fotocamera: '+e.message}
+};
+</script>
+</body>
+</html>
