@@ -1,126 +1,96 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="it">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>Camicia e Oltre — Live Try-On</title>
+  <title>Camicia e Oltre - Virtual Try On</title>
 
-<style>
-* {
-  box-sizing: border-box;
-}
+  <style>
+    * {
+      box-sizing: border-box;
+    }
 
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: #111;
-  color: white;
-  font-family: Arial, sans-serif;
-}
+    body {
+      margin: 0;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+    }
 
-header {
-  height: 54px;
-  padding: 15px 18px;
-  background: #000;
-  font-weight: 700;
-  position: relative;
-  z-index: 10;
-}
+    #app {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #111;
+    }
 
-#stage {
-  position: relative;
-  width: 100vw;
-  height: calc(100vh - 54px);
-  overflow: hidden;
-  background: #222;
-}
+    video {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      display: none;
+    }
 
-video,
-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+    canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
 
-video {
-  transform: scaleX(-1);
-}
+    #loading {
+      position: absolute;
+      z-index: 10;
+      background: rgba(0,0,0,.75);
+      padding: 20px 28px;
+      border-radius: 15px;
+      font-size: 17px;
+      text-align: center;
+    }
 
-canvas {
-  z-index: 2;
-}
-
-.panel {
-  position: absolute;
-  z-index: 5;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  background: rgba(0,0,0,.78);
-  padding: 14px;
-  border-radius: 14px;
-  text-align: center;
-  width: min(92vw,430px);
-}
-
-button {
-  border: 0;
-  border-radius: 10px;
-  padding: 12px 20px;
-  font-weight: 700;
-  cursor: pointer;
-  font-size: 15px;
-}
-
-button:disabled {
-  opacity: .7;
-}
-
-#status {
-  font-size: 12px;
-  margin-top: 9px;
-  opacity: .85;
-}
-</style>
+    #info {
+      position: absolute;
+      z-index: 20;
+      bottom: 25px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,.65);
+      padding: 12px 20px;
+      border-radius: 30px;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+  </style>
 </head>
 
 <body>
 
-<header>
-CAMICIA E OLTRE — LIVE TRY-ON
-</header>
+<div id="app">
 
-<div id="stage">
-
-  <video id="video" playsinline muted></video>
+  <video id="video" autoplay playsinline></video>
 
   <canvas id="canvas"></canvas>
 
-  <div class="panel">
+  <div id="loading">
+    Caricamento Virtual Try On...
+  </div>
 
-    <button id="start">
-      📷 Apri fotocamera
-    </button>
-
-    <div id="status">
-      Consenti l'accesso alla fotocamera per iniziare.
-    </div>
-
+  <div id="info">
+    LIVE — muoviti davanti alla fotocamera
   </div>
 
 </div>
 
-
 <!-- MediaPipe -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-
 
 <script>
 
@@ -128,67 +98,89 @@ const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-const start = document.getElementById("start");
-const status = document.getElementById("status");
-
-
-/*
-========================================================
-CAMICIA
-========================================================
-*/
+const loading = document.getElementById("loading");
 
 const shirt = new Image();
 
+/*
+  IMPORTANTE:
+  il file deve chiamarsi esattamente:
+
+  camicia.png
+
+  e deve essere nella stessa cartella di index.html
+*/
 shirt.src = "./camicia.png";
 
 
-/*
-========================================================
-RIDIMENSIONAMENTO
-========================================================
-*/
+let poseReady = false;
+
+
+/* =========================
+   CAMERA
+========================= */
+
+async function startCamera() {
+
+  try {
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: "user",
+        width: {
+          ideal: 1280
+        },
+        height: {
+          ideal: 720
+        }
+      },
+      audio: false
+    });
+
+    video.srcObject = stream;
+
+    await video.play();
+
+    resizeCanvas();
+
+    loading.innerText = "Rilevamento del corpo...";
+
+    startPose();
+
+  } catch (error) {
+
+    console.error(error);
+
+    loading.innerHTML =
+      "⚠️ Impossibile accedere alla fotocamera.<br><br>" +
+      "Controlla i permessi della fotocamera.";
+
+  }
+
+}
+
+
+/* =========================
+   CANVAS
+========================= */
 
 function resizeCanvas() {
 
-  if (!video.videoWidth) return;
-
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  canvas.width = video.videoWidth || 1280;
+  canvas.height = video.videoHeight || 720;
 
 }
 
 
-/*
-========================================================
-COORDINATE SPECULARI
-========================================================
-*/
-
-function point(index, landmarks) {
-
-  return {
-
-    x: (1 - landmarks[index].x) * canvas.width,
-
-    y: landmarks[index].y * canvas.height
-
-  };
-
-}
-
-
-/*
-========================================================
-POSE DETECTION
-========================================================
-*/
+/* =========================
+   MEDIAPIPE POSE
+========================= */
 
 const pose = new Pose({
 
-  locateFile: function(file) {
+  locateFile: (file) => {
 
-    return "https://cdn.jsdelivr.net/npm/@mediapipe/pose/" + file;
+    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
 
   }
 
@@ -201,44 +193,131 @@ pose.setOptions({
 
   smoothLandmarks: true,
 
-  minDetectionConfidence: 0.55,
+  enableSegmentation: false,
 
-  minTrackingConfidence: 0.55
+  smoothSegmentation: false,
+
+  minDetectionConfidence: 0.5,
+
+  minTrackingConfidence: 0.5
 
 });
 
 
-/*
-========================================================
-RISULTATI DEL TRACKING
-========================================================
-*/
+pose.onResults(onResults);
 
-pose.onResults(function(results) {
 
-  if (!video.videoWidth) return;
+/* =========================
+   AVVIO POSE
+========================= */
+
+function startPose() {
+
+  poseReady = true;
+
+  loading.style.display = "none";
+
+  processFrame();
+
+}
+
+
+/* =========================
+   FRAME
+========================= */
+
+async function processFrame() {
+
+  if (!poseReady) return;
+
+  if (video.readyState >= 2) {
+
+    await pose.send({
+      image: video
+    });
+
+  }
+
+  requestAnimationFrame(processFrame);
+
+}
+
+
+/* =========================
+   RISULTATI
+========================= */
+
+function onResults(results) {
 
   resizeCanvas();
 
+  const W = canvas.width;
+  const H = canvas.height;
+
   /*
-  Disegniamo prima la fotocamera
+    Disegniamo prima la persona
   */
 
-  ctx.clearRect(
+  ctx.save();
+
+  ctx.scale(-1, 1);
+
+  ctx.drawImage(
+    video,
+    -W,
     0,
-    0,
-    canvas.width,
-    canvas.height
+    W,
+    H
   );
+
+  ctx.restore();
+
+
+  if (!results.poseLandmarks) {
+
+    return;
+
+  }
 
 
   const lm = results.poseLandmarks;
 
 
-  if (!lm) {
+  /*
+    LANDMARK PRINCIPALI
 
-    status.textContent =
-      "Mettiti davanti alla fotocamera mostrando spalle e busto.";
+    11 = spalla sinistra
+    12 = spalla destra
+
+    23 = anca sinistra
+    24 = anca destra
+
+    13 = gomito sinistro
+    14 = gomito destro
+
+    15 = polso sinistro
+    16 = polso destro
+  */
+
+  const leftShoulder  = lm[11];
+  const rightShoulder = lm[12];
+
+  const leftHip  = lm[23];
+  const rightHip = lm[24];
+
+  const leftElbow  = lm[13];
+  const rightElbow = lm[14];
+
+  const leftWrist  = lm[15];
+  const rightWrist = lm[16];
+
+
+  if (
+    !leftShoulder ||
+    !rightShoulder ||
+    !leftHip ||
+    !rightHip
+  ) {
 
     return;
 
@@ -246,295 +325,315 @@ pose.onResults(function(results) {
 
 
   /*
-  Punti MediaPipe
-
-  11 = spalla sinistra
-  12 = spalla destra
-  23 = anca sinistra
-  24 = anca destra
+    Coordinate reali.
+    Il video viene specchiato.
   */
 
-  const leftShoulder = point(11, lm);
-  const rightShoulder = point(12, lm);
+  function X(point) {
+    return (1 - point.x) * W;
+  }
 
-  const leftHip = point(23, lm);
-  const rightHip = point(24, lm);
-
-
-  /*
-  CENTRO DELLE SPALLE
-  */
-
-  const shoulderCenterX =
-    (leftShoulder.x + rightShoulder.x) / 2;
-
-  const shoulderCenterY =
-    (leftShoulder.y + rightShoulder.y) / 2;
-
-
-  /*
-  LARGHEZZA SPALLE
-  */
-
-  const shoulderWidth = Math.hypot(
-
-    rightShoulder.x - leftShoulder.x,
-
-    rightShoulder.y - leftShoulder.y
-
-  );
-
-
-  /*
-  ALTEZZA DEL BUSTO
-  */
-
-  const hipCenterY =
-    (leftHip.y + rightHip.y) / 2;
-
-
-  /*
-  ======================================================
-  DIMENSIONI CAMICIA
-  ======================================================
-  */
-
-
-  /*
-  La camicia è leggermente più larga
-  delle spalle reali.
-  */
-
-  const shirtWidth =
-    shoulderWidth * 1.55;
-
-
-  /*
-  Rapporto originale dell'immagine.
-  */
-
-  let shirtHeight = shirtWidth * 1.35;
-
-
-  /*
-  Evitiamo che la camicia salga sopra
-  il collo e il viso.
-  */
-
-  const topY =
-    shoulderCenterY + shoulderWidth * 0.05;
-
-
-  /*
-  Limite inferiore del busto.
-  */
-
-  const maxBottom =
-    hipCenterY + shoulderWidth * 0.55;
-
-
-  const allowedHeight =
-    maxBottom - topY;
-
-
-  if (shirtHeight > allowedHeight) {
-
-    shirtHeight = allowedHeight;
-
+  function Y(point) {
+    return point.y * H;
   }
 
 
+  const LS = {
+    x: X(leftShoulder),
+    y: Y(leftShoulder)
+  };
+
+  const RS = {
+    x: X(rightShoulder),
+    y: Y(rightShoulder)
+  };
+
+  const LH = {
+    x: X(leftHip),
+    y: Y(leftHip)
+  };
+
+  const RH = {
+    x: X(rightHip),
+    y: Y(rightHip)
+  };
+
+
   /*
-  ======================================================
-  ROTAZIONE DELLA CAMICIA
-  ======================================================
+    Centro del busto
   */
 
-  const angle = Math.atan2(
+  const centerX =
+    (LS.x + RS.x + LH.x + RH.x) / 4;
 
-    rightShoulder.y - leftShoulder.y,
+  const centerY =
+    (LS.y + RS.y) / 2;
 
-    rightShoulder.x - leftShoulder.x
 
+  /*
+    Larghezza delle spalle
+  */
+
+  const shoulderWidth = Math.sqrt(
+    Math.pow(RS.x - LS.x, 2) +
+    Math.pow(RS.y - LS.y, 2)
   );
 
 
   /*
-  ======================================================
-  DISEGNO
-  ======================================================
+    La camicia deve essere leggermente
+    più larga delle spalle.
+  */
+
+  const shirtWidth =
+    shoulderWidth * 1.65;
+
+
+  /*
+    Rapporto originale della camicia.
+  */
+
+  const shirtRatio =
+    shirt.height / shirt.width;
+
+
+  const shirtHeight =
+    shirtWidth * shirtRatio;
+
+
+  /*
+    Posizione verticale.
+
+    La camicia parte leggermente
+    sopra le spalle.
+  */
+
+  const topY =
+    centerY - shoulderWidth * 0.30;
+
+
+  /*
+    Disegno trasformato.
   */
 
   ctx.save();
 
 
   /*
-  Centro orizzontale.
+    Centro immagine
   */
 
-  const centerX = shoulderCenterX;
+  ctx.translate(centerX, topY);
 
 
   /*
-  Centro verticale della camicia.
+    Rotazione in base alla linea
+    delle spalle.
   */
 
-  const centerY =
-    topY + shirtHeight / 2;
-
-
-  ctx.translate(
-    centerX,
-    centerY
-  );
+  const angle =
+    Math.atan2(
+      RS.y - LS.y,
+      RS.x - LS.x
+    );
 
 
   ctx.rotate(angle);
 
 
   /*
-  Leggera trasparenza per rendere
-  più naturale l'effetto.
+    Manteniamo la proporzione
+    della camicia.
   */
 
-  ctx.globalAlpha = 0.96;
+  ctx.globalAlpha = 0.98;
 
 
-  /*
-  Disegna la camicia.
-  */
-
-  if (shirt.complete && shirt.naturalWidth > 0) {
-
-    ctx.drawImage(
-
-      shirt,
-
-      -shirtWidth / 2,
-
-      -shirtHeight / 2,
-
-      shirtWidth,
-
-      shirtHeight
-
-    );
-
-  }
+  ctx.drawImage(
+    shirt,
+    -shirtWidth / 2,
+    0,
+    shirtWidth,
+    shirtHeight
+  );
 
 
   ctx.restore();
 
 
   /*
-  ======================================================
-  STATO
-  ======================================================
+    Ridisegniamo le braccia sopra la camicia.
+
+    Questo evita che la camicia rimanga
+    davanti alle braccia.
   */
 
-  status.textContent =
-    "LIVE — tracking corpo attivo";
+  redrawArm(
+    leftShoulder,
+    leftElbow,
+    leftWrist
+  );
 
-});
+  redrawArm(
+    rightShoulder,
+    rightElbow,
+    rightWrist
+  );
 
-
-/*
-========================================================
-AVVIO FOTOCAMERA
-========================================================
-*/
-
-start.onclick = async function() {
-
-  try {
-
-    status.textContent =
-      "Richiesta accesso alla fotocamera...";
+}
 
 
-    const stream =
-      await navigator.mediaDevices.getUserMedia({
+/* =========================
+   BRACCIA
+========================= */
 
-        video: {
+function redrawArm(shoulder, elbow, wrist) {
 
-          facingMode: "user",
+  if (!shoulder || !elbow || !wrist) {
+    return;
+  }
 
-          width: {
-            ideal: 1280
-          },
-
-          height: {
-            ideal: 720
-          }
-
-        },
-
-        audio: false
-
-      });
+  const W = canvas.width;
+  const H = canvas.height;
 
 
-    video.srcObject = stream;
+  function X(point) {
+    return (1 - point.x) * W;
+  }
+
+  function Y(point) {
+    return point.y * H;
+  }
 
 
-    await video.play();
+  const S = {
+    x: X(shoulder),
+    y: Y(shoulder)
+  };
+
+  const E = {
+    x: X(elbow),
+    y: Y(elbow)
+  };
+
+  const Wp = {
+    x: X(wrist),
+    y: Y(wrist)
+  };
 
 
-    resizeCanvas();
+  /*
+    Larghezza approssimativa del braccio.
+  */
+
+  const upperWidth = 35;
+  const lowerWidth = 28;
 
 
-    /*
-    Avvio MediaPipe
-    */
+  function perpendicular(a, b, width) {
 
-    const camera = new Camera(
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
 
-      video,
+    const length =
+      Math.sqrt(dx * dx + dy * dy) || 1;
 
-      {
-
-        onFrame: async function() {
-
-          await pose.send({
-
-            image: video
-
-          });
-
-        },
-
-        width: 1280,
-
-        height: 720
-
-      }
-
-    );
-
-
-    camera.start();
-
-
-    start.textContent =
-      "Fotocamera attiva";
-
-    start.disabled = true;
-
-
-    status.textContent =
-      "Avvio del tracking...";
-
-
-  } catch (error) {
-
-    console.error(error);
-
-
-    status.textContent =
-      "Impossibile aprire la fotocamera: " +
-      error.message;
+    return {
+      x: -dy / length * width,
+      y: dx / length * width
+    };
 
   }
+
+
+  const p1 =
+    perpendicular(S, E, upperWidth);
+
+  const p2 =
+    perpendicular(E, Wp, lowerWidth);
+
+
+  /*
+    Disegniamo la parte del video
+    corrispondente al braccio.
+  */
+
+  ctx.save();
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    S.x + p1.x,
+    S.y + p1.y
+  );
+
+  ctx.lineTo(
+    E.x + p1.x,
+    E.y + p1.y
+  );
+
+  ctx.lineTo(
+    Wp.x + p2.x,
+    Wp.y + p2.y
+  );
+
+  ctx.lineTo(
+    Wp.x - p2.x,
+    Wp.y - p2.y
+  );
+
+  ctx.lineTo(
+    E.x - p1.x,
+    E.y - p1.y
+  );
+
+  ctx.lineTo(
+    S.x - p1.x,
+    S.y - p1.y
+  );
+
+  ctx.closePath();
+
+  ctx.clip();
+
+
+  /*
+    Disegniamo il video originale
+    solamente dentro il braccio.
+  */
+
+  ctx.scale(-1, 1);
+
+  ctx.drawImage(
+    video,
+    -W,
+    0,
+    W,
+    H
+  );
+
+
+  ctx.restore();
+
+}
+
+
+/* =========================
+   AVVIO
+========================= */
+
+shirt.onload = () => {
+
+  startCamera();
+
+};
+
+shirt.onerror = () => {
+
+  loading.innerHTML =
+    "❌ Non trovo <b>camicia.png</b>.<br><br>" +
+    "Controlla che il nome del file sia esattamente:<br>" +
+    "<b>camicia.png</b>";
 
 };
 
