@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <title>Camicia e Oltre - Virtual Try On</title>
 
 <style>
@@ -19,33 +18,55 @@ html,body{
 
 #video{
     position:absolute;
+    inset:0;
     width:100%;
     height:100%;
     object-fit:cover;
     transform:scaleX(-1);
 }
 
+#canvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    pointer-events:none;
+}
+
 #message{
     position:absolute;
-    z-index:10;
+    z-index:20;
     left:50%;
     top:50%;
     transform:translate(-50%,-50%);
-    background:rgba(0,0,0,.8);
+    background:rgba(0,0,0,.82);
     color:white;
     padding:25px;
-    border-radius:15px;
+    border-radius:18px;
     text-align:center;
     max-width:85%;
 }
 
-button{
-    margin-top:15px;
+#start{
+    margin-top:18px;
     padding:14px 25px;
     border:0;
     border-radius:30px;
-    font-size:16px;
+    font-size:17px;
     cursor:pointer;
+}
+
+#status{
+    position:absolute;
+    z-index:15;
+    bottom:20px;
+    left:50%;
+    transform:translateX(-50%);
+    color:white;
+    background:rgba(0,0,0,.65);
+    padding:10px 18px;
+    border-radius:25px;
+    font-size:14px;
 }
 </style>
 </head>
@@ -54,58 +75,139 @@ button{
 
 <video id="video" autoplay playsinline muted></video>
 
+<canvas id="canvas"></canvas>
+
 <div id="message">
-    <div id="text">
-        Premi il pulsante per aprire la fotocamera
+
+    <div id="messageText">
+        Virtual Try-On
     </div>
 
     <button id="start">
         📷 Apri fotocamera
     </button>
+
 </div>
+
+<div id="status">
+    In attesa della fotocamera...
+</div>
+
+
+<!-- MediaPipe Pose -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
 
 
 <script>
 
-const video = document.getElementById("video");
-const message = document.getElementById("message");
-const text = document.getElementById("text");
-const start = document.getElementById("start");
+const video =
+    document.getElementById("video");
+
+const canvas =
+    document.getElementById("canvas");
+
+const ctx =
+    canvas.getContext("2d");
+
+const message =
+    document.getElementById("message");
+
+const messageText =
+    document.getElementById("messageText");
+
+const startButton =
+    document.getElementById("start");
+
+const status =
+    document.getElementById("status");
 
 
-async function openCamera(){
+/* ==========================================
+   CAMICIA
+========================================== */
 
-    text.innerHTML = "Richiesta accesso alla fotocamera...";
-    start.style.display = "none";
+const shirt =
+    new Image();
+
+shirt.src =
+    "./camicia.png";
 
 
-    /*
-       Controlliamo che il browser supporti
-       la fotocamera.
-    */
+/* ==========================================
+   VARIABILI
+========================================== */
 
-    if(!navigator.mediaDevices){
+let W = 1280;
+let H = 720;
 
-        text.innerHTML =
-            "❌ Questo browser non permette l'accesso alla fotocamera.<br><br>" +
-            "Prova ad aprire il sito direttamente in Safari.";
+let poseLandmarks = null;
 
-        return;
+let cameraStream = null;
+
+
+/* ==========================================
+   MEDIAPIPE
+========================================== */
+
+const pose =
+    new Pose({
+
+        locateFile:function(file){
+
+            return
+            "https://cdn.jsdelivr.net/npm/@mediapipe/pose/"
+            + file;
+
+        }
+
+    });
+
+
+pose.setOptions({
+
+    modelComplexity:1,
+
+    smoothLandmarks:true,
+
+    enableSegmentation:true,
+
+    smoothSegmentation:true,
+
+    minDetectionConfidence:.55,
+
+    minTrackingConfidence:.55
+
+});
+
+
+pose.onResults(function(results){
+
+    if(results.poseLandmarks){
+
+        poseLandmarks =
+            results.poseLandmarks;
+
     }
 
+});
 
-    if(!navigator.mediaDevices.getUserMedia){
 
-        text.innerHTML =
-            "❌ La fotocamera non è disponibile in questo browser.";
+/* ==========================================
+   APRI FOTOCAMERA
+========================================== */
 
-        return;
-    }
-
+async function startCamera(){
 
     try{
 
-        const stream =
+        messageText.innerHTML =
+            "Richiesta accesso alla fotocamera...";
+
+        startButton.style.display =
+            "none";
+
+
+        cameraStream =
             await navigator.mediaDevices.getUserMedia({
 
                 video:{
@@ -125,95 +227,777 @@ async function openCamera(){
             });
 
 
-        /*
-           Se arriviamo qui,
-           la fotocamera è autorizzata.
-        */
+        video.srcObject =
+            cameraStream;
 
-        video.srcObject = stream;
 
         await video.play();
 
 
-        message.style.display = "none";
+        W =
+            video.videoWidth;
+
+        H =
+            video.videoHeight;
 
 
-        console.log(
-            "CAMERA OK"
-        );
+        canvas.width =
+            W;
+
+        canvas.height =
+            H;
+
+
+        message.style.display =
+            "none";
+
+
+        status.innerHTML =
+            "Rilevamento corpo...";
+
+
+        /*
+           Avviamo MediaPipe
+        */
+
+        processCamera();
 
 
     }catch(error){
 
-        console.error(
-            "ERRORE FOTOCAMERA:",
-            error
-        );
+        console.error(error);
 
+        startButton.style.display =
+            "inline-block";
 
-        start.style.display = "inline-block";
-
-
-        /*
-           Mostriamo l'errore REALE.
-        */
-
-        let errorText =
-            error.name +
-            "<br><br>" +
-            (error.message || "Nessun dettaglio disponibile");
-
-
-        if(error.name === "NotAllowedError"){
-
-            errorText +=
-                "<br><br>" +
-                "Il browser sta bloccando l'accesso alla fotocamera. " +
-                "Controlla il permesso per questo sito.";
-
-        }
-
-
-        if(error.name === "NotFoundError"){
-
-            errorText +=
-                "<br><br>" +
-                "Non è stata trovata nessuna fotocamera.";
-
-        }
-
-
-        if(error.name === "NotReadableError"){
-
-            errorText +=
-                "<br><br>" +
-                "La fotocamera è utilizzata da un'altra applicazione.";
-
-        }
-
-
-        if(error.name === "SecurityError"){
-
-            errorText +=
-                "<br><br>" +
-                "Il browser non considera questa pagina autorizzata.";
-
-        }
-
-
-        text.innerHTML =
-            "❌ Errore fotocamera<br><br>" +
-            errorText;
+        messageText.innerHTML =
+            "❌ Fotocamera non disponibile<br><br>" +
+            error.name;
 
     }
 
 }
 
 
-start.addEventListener(
+/* ==========================================
+   PROCESSAMENTO CAMERA
+========================================== */
+
+async function processCamera(){
+
+    if(
+        video.readyState >= 2 &&
+        video.videoWidth > 0
+    ){
+
+        await pose.send({
+            image:video
+        });
+
+    }
+
+    requestAnimationFrame(
+        processCamera
+    );
+
+}
+
+
+/* ==========================================
+   COORDINATE
+========================================== */
+
+function point(p){
+
+    return {
+
+        x:(1-p.x)*W,
+
+        y:p.y*H
+
+    };
+
+}
+
+
+function distance(a,b){
+
+    return Math.hypot(
+
+        b.x-a.x,
+
+        b.y-a.y
+
+    );
+
+}
+
+
+/* ==========================================
+   INTERPOLAZIONE
+========================================== */
+
+function lerp(a,b,t){
+
+    return a+(b-a)*t;
+
+}
+
+
+/* ==========================================
+   VIDEO
+========================================== */
+
+function drawVideo(){
+
+    ctx.save();
+
+    ctx.clearRect(
+        0,
+        0,
+        W,
+        H
+    );
+
+    ctx.translate(
+        W,
+        0
+    );
+
+    ctx.scale(
+        -1,
+        1
+    );
+
+    ctx.drawImage(
+
+        video,
+
+        0,
+        0,
+        W,
+        H
+
+    );
+
+    ctx.restore();
+
+}
+
+
+/* ==========================================
+   CAMICIA DEFORMATA
+========================================== */
+
+function drawShirt(){
+
+    if(
+        !poseLandmarks ||
+        !shirt.complete ||
+        shirt.naturalWidth === 0
+    ){
+
+        return;
+
+    }
+
+
+    /*
+       MediaPipe:
+
+       11 = spalla sinistra
+       12 = spalla destra
+       23 = fianco sinistro
+       24 = fianco destro
+    */
+
+    const LS =
+        point(poseLandmarks[11]);
+
+    const RS =
+        point(poseLandmarks[12]);
+
+    const LH =
+        point(poseLandmarks[23]);
+
+    const RH =
+        point(poseLandmarks[24]);
+
+
+    const shoulderWidth =
+        distance(
+            LS,
+            RS
+        );
+
+
+    const hipWidth =
+        distance(
+            LH,
+            RH
+        );
+
+
+    const centerTop = {
+
+        x:(LS.x+RS.x)/2,
+
+        y:(LS.y+RS.y)/2
+
+    };
+
+
+    const centerBottom = {
+
+        x:(LH.x+RH.x)/2,
+
+        y:(LH.y+RH.y)/2
+
+    };
+
+
+    /*
+       Ingrandiamo leggermente
+       il capo.
+    */
+
+    const topWidth =
+        shoulderWidth * 1.42;
+
+
+    const bottomWidth =
+        Math.max(
+
+            hipWidth * 1.30,
+
+            shoulderWidth * 1.20
+
+        );
+
+
+    /*
+       Altezza del busto.
+    */
+
+    const torsoHeight =
+        distance(
+
+            centerTop,
+
+            centerBottom
+
+        ) * 1.25;
+
+
+    /*
+       Inclinazione delle spalle.
+    */
+
+    const angle =
+        Math.atan2(
+
+            RS.y-LS.y,
+
+            RS.x-LS.x
+
+        );
+
+
+    const ux =
+        Math.cos(angle);
+
+    const uy =
+        Math.sin(angle);
+
+
+    const vx =
+        -uy;
+
+    const vy =
+        ux;
+
+
+    /*
+       Portiamo la camicia
+       leggermente verso il collo.
+    */
+
+    const topCenter = {
+
+        x:centerTop.x
+          -vx*shoulderWidth*.22,
+
+        y:centerTop.y
+          -vy*shoulderWidth*.22
+
+    };
+
+
+    const bottomCenter = {
+
+        x:topCenter.x
+          +vx*torsoHeight,
+
+        y:topCenter.y
+          +vy*torsoHeight
+
+    };
+
+
+    /*
+       Quattro angoli.
+    */
+
+    const TL = {
+
+        x:topCenter.x
+          -ux*topWidth/2,
+
+        y:topCenter.y
+          -uy*topWidth/2
+
+    };
+
+
+    const TR = {
+
+        x:topCenter.x
+          +ux*topWidth/2,
+
+        y:topCenter.y
+          +uy*topWidth/2
+
+    };
+
+
+    const BL = {
+
+        x:bottomCenter.x
+          -ux*bottomWidth/2,
+
+        y:bottomCenter.y
+          -uy*bottomWidth/2
+
+    };
+
+
+    const BR = {
+
+        x:bottomCenter.x
+          +ux*bottomWidth/2,
+
+        y:bottomCenter.y
+          +uy*bottomWidth/2
+
+    };
+
+
+    /*
+       Mesh.
+    */
+
+    const rows = 12;
+
+    const cols = 8;
+
+
+    function meshPoint(u,v){
+
+        const topX =
+            lerp(
+                TL.x,
+                TR.x,
+                u
+            );
+
+        const topY =
+            lerp(
+                TL.y,
+                TR.y,
+                u
+            );
+
+
+        const bottomX =
+            lerp(
+                BL.x,
+                BR.x,
+                u
+            );
+
+        const bottomY =
+            lerp(
+                BL.y,
+                BR.y,
+                u
+            );
+
+
+        return {
+
+            x:lerp(
+                topX,
+                bottomX,
+                v
+            ),
+
+            y:lerp(
+                topY,
+                bottomY,
+                v
+            )
+
+        };
+
+    }
+
+
+    for(
+        let r=0;
+        r<rows;
+        r++
+    ){
+
+        const v1 =
+            r/rows;
+
+        const v2 =
+            (r+1)/rows;
+
+
+        for(
+            let c=0;
+            c<cols;
+            c++
+        ){
+
+            const u1 =
+                c/cols;
+
+            const u2 =
+                (c+1)/cols;
+
+
+            const p00 =
+                meshPoint(
+                    u1,
+                    v1
+                );
+
+            const p10 =
+                meshPoint(
+                    u2,
+                    v1
+                );
+
+            const p01 =
+                meshPoint(
+                    u1,
+                    v2
+                );
+
+            const p11 =
+                meshPoint(
+                    u2,
+                    v2
+                );
+
+
+            const sx1 =
+                shirt.naturalWidth*u1;
+
+            const sx2 =
+                shirt.naturalWidth*u2;
+
+            const sy1 =
+                shirt.naturalHeight*v1;
+
+            const sy2 =
+                shirt.naturalHeight*v2;
+
+
+            drawTriangle(
+
+                sx1,
+                sy1,
+
+                sx2,
+                sy1,
+
+                sx1,
+                sy2,
+
+                p00,
+                p10,
+                p01
+
+            );
+
+
+            drawTriangle(
+
+                sx2,
+                sy1,
+
+                sx2,
+                sy2,
+
+                sx1,
+                sy2,
+
+                p10,
+                p11,
+                p01
+
+            );
+
+        }
+
+    }
+
+}
+
+
+/* ==========================================
+   TRIANGOLI
+========================================== */
+
+function drawTriangle(
+
+    sx0,
+    sy0,
+
+    sx1,
+    sy1,
+
+    sx2,
+    sy2,
+
+    p0,
+    p1,
+    p2
+
+){
+
+    const denominator =
+
+        sx0*(sy1-sy2) +
+
+        sx1*(sy2-sy0) +
+
+        sx2*(sy0-sy1);
+
+
+    if(
+        Math.abs(denominator)
+        < .001
+    ){
+
+        return;
+
+    }
+
+
+    const a =
+
+        (
+            p0.x*(sy1-sy2) +
+
+            p1.x*(sy2-sy0) +
+
+            p2.x*(sy0-sy1)
+
+        )
+        /denominator;
+
+
+    const b =
+
+        (
+            p0.y*(sy1-sy2) +
+
+            p1.y*(sy2-sy0) +
+
+            p2.y*(sy0-sy1)
+
+        )
+        /denominator;
+
+
+    const c =
+
+        (
+            p0.x*(sx2-sx1) +
+
+            p1.x*(sx0-sx2) +
+
+            p2.x*(sx1-sx0)
+
+        )
+        /denominator;
+
+
+    const d =
+
+        (
+            p0.y*(sx2-sx1) +
+
+            p1.y*(sx0-sx2) +
+
+            p2.y*(sx1-sx0)
+
+        )
+        /denominator;
+
+
+    const e =
+
+        (
+            p0.x*(sx1*sy2-sx2*sy1) +
+
+            p1.x*(sx2*sy0-sx0*sy2) +
+
+            p2.x*(sx0*sy1-sx1*sy0)
+
+        )
+        /denominator;
+
+
+    const f =
+
+        (
+            p0.y*(sx1*sy2-sx2*sy1) +
+
+            p1.y*(sx2*sy0-sx0*sy2) +
+
+            p2.y*(sx0*sy1-sx1*sy0)
+
+        )
+        /denominator;
+
+
+    ctx.save();
+
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+        p0.x,
+        p0.y
+    );
+
+    ctx.lineTo(
+        p1.x,
+        p1.y
+    );
+
+    ctx.lineTo(
+        p2.x,
+        p2.y
+    );
+
+    ctx.closePath();
+
+    ctx.clip();
+
+
+    ctx.setTransform(
+
+        a,
+        b,
+        c,
+        d,
+        e,
+        f
+
+    );
+
+
+    ctx.drawImage(
+
+        shirt,
+
+        0,
+        0
+
+    );
+
+
+    ctx.restore();
+
+}
+
+
+/* ==========================================
+   LOOP GRAFICO
+========================================== */
+
+function render(){
+
+    if(
+        video.readyState >= 2
+    ){
+
+        /*
+           Prima disegniamo
+           la fotocamera.
+        */
+
+        drawVideo();
+
+
+        /*
+           Poi la camicia.
+        */
+
+        if(
+            poseLandmarks
+        ){
+
+            drawShirt();
+
+
+            status.innerHTML =
+                "👕 Camicia in prova";
+
+        }else{
+
+            status.innerHTML =
+                "🧍 Posizionati davanti alla fotocamera";
+
+        }
+
+    }
+
+
+    requestAnimationFrame(
+        render
+    );
+
+}
+
+
+/* ==========================================
+   AVVIO
+========================================== */
+
+startButton.addEventListener(
+
     "click",
-    openCamera
+
+    startCamera
+
 );
+
+
+shirt.onload = function(){
+
+    render();
+
+};
+
+
+render();
 
 </script>
 
