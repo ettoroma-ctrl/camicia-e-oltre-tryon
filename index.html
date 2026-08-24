@@ -1,95 +1,77 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camicia e Oltre - Virtual Try On</title>
 
-  <title>Camicia e Oltre - Virtual Try On</title>
+<style>
+html,body{
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#000;
+    font-family:Arial,sans-serif;
+}
 
-  <style>
-    * {
-      box-sizing: border-box;
-    }
+#video{
+    display:none;
+}
 
-    body {
-      margin: 0;
-      background: #111;
-      color: white;
-      font-family: Arial, sans-serif;
-      overflow: hidden;
-    }
+#canvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+}
 
-    #app {
-      width: 100vw;
-      height: 100vh;
-      position: relative;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: #111;
-    }
+#loading{
+    position:absolute;
+    z-index:20;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    background:rgba(0,0,0,.75);
+    color:white;
+    padding:20px 28px;
+    border-radius:15px;
+    text-align:center;
+}
 
-    video {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1);
-      display: none;
-    }
-
-    canvas {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1);
-    }
-
-    #loading {
-      position: absolute;
-      z-index: 10;
-      background: rgba(0,0,0,.75);
-      padding: 20px 28px;
-      border-radius: 15px;
-      font-size: 17px;
-      text-align: center;
-    }
-
-    #info {
-      position: absolute;
-      z-index: 20;
-      bottom: 25px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,.65);
-      padding: 12px 20px;
-      border-radius: 30px;
-      font-size: 14px;
-      white-space: nowrap;
-    }
-  </style>
+#info{
+    position:absolute;
+    z-index:20;
+    bottom:25px;
+    left:50%;
+    transform:translateX(-50%);
+    color:white;
+    background:rgba(0,0,0,.65);
+    padding:12px 20px;
+    border-radius:30px;
+    font-size:14px;
+}
+</style>
 </head>
 
 <body>
 
-<div id="app">
+<video id="video" autoplay playsinline></video>
 
-  <video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
 
-  <canvas id="canvas"></canvas>
-
-  <div id="loading">
+<div id="loading">
     Caricamento Virtual Try On...
-  </div>
-
-  <div id="info">
-    LIVE — muoviti davanti alla fotocamera
-  </div>
-
 </div>
 
-<!-- MediaPipe -->
+<div id="info">
+    LIVE — posizionati davanti alla fotocamera
+</div>
+
+
+<!-- MEDIAPIPE POSE -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
 
 <script>
@@ -102,538 +84,702 @@ const loading = document.getElementById("loading");
 
 const shirt = new Image();
 
-/*
-  IMPORTANTE:
-  il file deve chiamarsi esattamente:
-
-  camicia.png
-
-  e deve essere nella stessa cartella di index.html
-*/
 shirt.src = "./camicia.png";
 
+let W = 1280;
+let H = 720;
 
-let poseReady = false;
+let lastPose = null;
 
 
-/* =========================
+/* =========================================================
    CAMERA
-========================= */
+========================================================= */
 
-async function startCamera() {
+async function startCamera(){
 
-  try {
+    try{
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: "user",
-        width: {
-          ideal: 1280
-        },
-        height: {
-          ideal: 720
-        }
-      },
-      audio: false
-    });
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video:{
+                facingMode:"user",
+                width:{ideal:1280},
+                height:{ideal:720}
+            },
+            audio:false
+        });
 
-    video.srcObject = stream;
+        video.srcObject = stream;
 
-    await video.play();
+        await video.play();
 
-    resizeCanvas();
+        W = video.videoWidth;
+        H = video.videoHeight;
 
-    loading.innerText = "Rilevamento del corpo...";
+        canvas.width = W;
+        canvas.height = H;
 
-    startPose();
+        loading.innerHTML = "Rilevamento del corpo...";
 
-  } catch (error) {
+        pose.start();
 
-    console.error(error);
+    }catch(error){
 
-    loading.innerHTML =
-      "⚠️ Impossibile accedere alla fotocamera.<br><br>" +
-      "Controlla i permessi della fotocamera.";
+        console.error(error);
 
-  }
+        loading.innerHTML =
+            "⚠️ Permesso fotocamera negato.<br><br>" +
+            "Consenti l'accesso alla fotocamera.";
 
+    }
 }
 
 
-/* =========================
-   CANVAS
-========================= */
-
-function resizeCanvas() {
-
-  canvas.width = video.videoWidth || 1280;
-  canvas.height = video.videoHeight || 720;
-
-}
-
-
-/* =========================
-   MEDIAPIPE POSE
-========================= */
+/* =========================================================
+   MEDIAPIPE
+========================================================= */
 
 const pose = new Pose({
-
-  locateFile: (file) => {
-
-    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
-
-  }
-
+    locateFile:(file)=>{
+        return "https://cdn.jsdelivr.net/npm/@mediapipe/pose/" + file;
+    }
 });
 
 
 pose.setOptions({
 
-  modelComplexity: 1,
+    modelComplexity:2,
 
-  smoothLandmarks: true,
+    smoothLandmarks:true,
 
-  enableSegmentation: false,
+    enableSegmentation:false,
 
-  smoothSegmentation: false,
+    minDetectionConfidence:.55,
 
-  minDetectionConfidence: 0.5,
-
-  minTrackingConfidence: 0.5
+    minTrackingConfidence:.55
 
 });
 
 
-pose.onResults(onResults);
+pose.onResults(results=>{
+
+    if(results.poseLandmarks){
+
+        lastPose = results.poseLandmarks;
+
+    }
+
+});
 
 
-/* =========================
-   AVVIO POSE
-========================= */
+/* =========================================================
+   UTILITY
+========================================================= */
 
-function startPose() {
+function px(p){
 
-  poseReady = true;
-
-  loading.style.display = "none";
-
-  processFrame();
-
-}
-
-
-/* =========================
-   FRAME
-========================= */
-
-async function processFrame() {
-
-  if (!poseReady) return;
-
-  if (video.readyState >= 2) {
-
-    await pose.send({
-      image: video
-    });
-
-  }
-
-  requestAnimationFrame(processFrame);
+    return {
+        x:(1-p.x)*W,
+        y:p.y*H
+    };
 
 }
 
 
-/* =========================
-   RISULTATI
-========================= */
+function distance(a,b){
 
-function onResults(results) {
+    return Math.sqrt(
+        Math.pow(b.x-a.x,2)+
+        Math.pow(b.y-a.y,2)
+    );
 
-  resizeCanvas();
+}
 
-  const W = canvas.width;
-  const H = canvas.height;
 
-  /*
-    Disegniamo prima la persona
-  */
+function lerp(a,b,t){
 
-  ctx.save();
+    return a+(b-a)*t;
 
-  ctx.scale(-1, 1);
+}
 
-  ctx.drawImage(
-    video,
-    -W,
-    0,
-    W,
-    H
-  );
 
-  ctx.restore();
+/* =========================================================
+   DISEGNO VIDEO
+========================================================= */
 
+function drawVideo(){
 
-  if (!results.poseLandmarks) {
+    ctx.save();
 
-    return;
+    ctx.translate(W,0);
+    ctx.scale(-1,1);
 
-  }
+    ctx.drawImage(
+        video,
+        0,
+        0,
+        W,
+        H
+    );
 
+    ctx.restore();
 
-  const lm = results.poseLandmarks;
+}
 
 
-  /*
-    LANDMARK PRINCIPALI
+/* =========================================================
+   CAMICIA
+========================================================= */
 
-    11 = spalla sinistra
-    12 = spalla destra
+function drawShirt(points){
 
-    23 = anca sinistra
-    24 = anca destra
+    const LS = px(points[11]);
+    const RS = px(points[12]);
 
-    13 = gomito sinistro
-    14 = gomito destro
+    const LH = px(points[23]);
+    const RH = px(points[24]);
 
-    15 = polso sinistro
-    16 = polso destro
-  */
 
-  const leftShoulder  = lm[11];
-  const rightShoulder = lm[12];
+    /*
+       Larghezza spalle
+    */
 
-  const leftHip  = lm[23];
-  const rightHip = lm[24];
+    const shoulderWidth =
+        distance(LS,RS);
 
-  const leftElbow  = lm[13];
-  const rightElbow = lm[14];
 
-  const leftWrist  = lm[15];
-  const rightWrist = lm[16];
+    /*
+       Larghezza fianchi
+    */
 
+    const hipWidth =
+        distance(LH,RH);
 
-  if (
-    !leftShoulder ||
-    !rightShoulder ||
-    !leftHip ||
-    !rightHip
-  ) {
 
-    return;
+    /*
+       centro corpo
+    */
 
-  }
+    const centerTop = {
+        x:(LS.x+RS.x)/2,
+        y:(LS.y+RS.y)/2
+    };
 
 
-  /*
-    Coordinate reali.
-    Il video viene specchiato.
-  */
+    const centerBottom = {
+        x:(LH.x+RH.x)/2,
+        y:(LH.y+RH.y)/2
+    };
 
-  function X(point) {
-    return (1 - point.x) * W;
-  }
 
-  function Y(point) {
-    return point.y * H;
-  }
+    /*
+       AUMENTIAMO leggermente la larghezza
+       per evitare l'effetto "camicia stretta".
+    */
 
+    const topWidth =
+        shoulderWidth * 1.32;
 
-  const LS = {
-    x: X(leftShoulder),
-    y: Y(leftShoulder)
-  };
 
-  const RS = {
-    x: X(rightShoulder),
-    y: Y(rightShoulder)
-  };
+    const bottomWidth =
+        Math.max(
+            hipWidth * 1.30,
+            shoulderWidth * 1.20
+        );
 
-  const LH = {
-    x: X(leftHip),
-    y: Y(leftHip)
-  };
 
-  const RH = {
-    x: X(rightHip),
-    y: Y(rightHip)
-  };
+    /*
+       Altezza busto.
+    */
 
+    const torsoHeight =
+        distance(
+            centerTop,
+            centerBottom
+        ) * 1.18;
 
-  /*
-    Centro del busto
-  */
 
-  const centerX =
-    (LS.x + RS.x + LH.x + RH.x) / 4;
+    /*
+       Angolo delle spalle.
+    */
 
-  const centerY =
-    (LS.y + RS.y) / 2;
+    const angle =
+        Math.atan2(
+            RS.y-LS.y,
+            RS.x-LS.x
+        );
 
 
-  /*
-    Larghezza delle spalle
-  */
+    /*
+       Vettore orizzontale.
+    */
 
-  const shoulderWidth = Math.sqrt(
-    Math.pow(RS.x - LS.x, 2) +
-    Math.pow(RS.y - LS.y, 2)
-  );
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
 
 
-  /*
-    La camicia deve essere leggermente
-    più larga delle spalle.
-  */
+    /*
+       Vettore verticale.
+    */
 
-  const shirtWidth =
-    shoulderWidth * 1.65;
+    const vx = -uy;
+    const vy = ux;
 
 
-  /*
-    Rapporto originale della camicia.
-  */
+    /*
+       Spostamento leggermente verso l'alto.
+    */
 
-  const shirtRatio =
-    shirt.height / shirt.width;
+    const topCenter = {
 
+        x:centerTop.x - vx*shoulderWidth*.08,
 
-  const shirtHeight =
-    shirtWidth * shirtRatio;
+        y:centerTop.y - vy*shoulderWidth*.08
 
+    };
 
-  /*
-    Posizione verticale.
 
-    La camicia parte leggermente
-    sopra le spalle.
-  */
+    /*
+       Fondo camicia.
+    */
 
-  const topY =
-    centerY - shoulderWidth * 0.30;
+    const bottomCenter = {
 
+        x:topCenter.x + vx*torsoHeight,
 
-  /*
-    Disegno trasformato.
-  */
+        y:topCenter.y + vy*torsoHeight
 
-  ctx.save();
+    };
 
 
-  /*
-    Centro immagine
-  */
+    /*
+       Quattro angoli della camicia.
+    */
 
-  ctx.translate(centerX, topY);
+    const TL = {
 
+        x:topCenter.x - ux*topWidth/2,
 
-  /*
-    Rotazione in base alla linea
-    delle spalle.
-  */
+        y:topCenter.y - uy*topWidth/2
 
-  const angle =
-    Math.atan2(
-      RS.y - LS.y,
-      RS.x - LS.x
+    };
+
+
+    const TR = {
+
+        x:topCenter.x + ux*topWidth/2,
+
+        y:topCenter.y + uy*topWidth/2
+
+    };
+
+
+    const BL = {
+
+        x:bottomCenter.x - ux*bottomWidth/2,
+
+        y:bottomCenter.y - uy*bottomWidth/2
+
+    };
+
+
+    const BR = {
+
+        x:bottomCenter.x + ux*bottomWidth/2,
+
+        y:bottomCenter.y + uy*bottomWidth/2
+
+    };
+
+
+    /*
+       Usiamo una mesh composta da più fasce.
+       In questo modo la camicia segue meglio
+       la forma del busto.
+    */
+
+    const rows = 8;
+    const cols = 4;
+
+
+    for(let r=0;r<rows;r++){
+
+        const t1=r/rows;
+        const t2=(r+1)/rows;
+
+
+        for(let c=0;c<cols;c++){
+
+            const s1=c/cols;
+            const s2=(c+1)/cols;
+
+
+            /*
+               Interpolazione bilineare.
+            */
+
+            function point(u,v){
+
+                const topX =
+                    lerp(TL.x,TR.x,u);
+
+                const topY =
+                    lerp(TL.y,TR.y,u);
+
+                const bottomX =
+                    lerp(BL.x,BR.x,u);
+
+                const bottomY =
+                    lerp(BL.y,BR.y,u);
+
+                return {
+
+                    x:lerp(topX,bottomX,v),
+
+                    y:lerp(topY,bottomY,v)
+
+                };
+
+            }
+
+
+            const p00=point(s1,t1);
+            const p10=point(s2,t1);
+            const p01=point(s1,t2);
+            const p11=point(s2,t2);
+
+
+            /*
+               Coordinate sorgente della camicia.
+            */
+
+            const sx1 =
+                shirt.width*s1;
+
+            const sx2 =
+                shirt.width*s2;
+
+            const sy1 =
+                shirt.height*t1;
+
+            const sy2 =
+                shirt.height*t2;
+
+
+            drawTriangle(
+                sx1,sy1,
+                sx2,sy1,
+                sx1,sy2,
+                p00,p10,p01
+            );
+
+
+            drawTriangle(
+                sx2,sy1,
+                sx2,sy2,
+                sx1,sy2,
+                p10,p11,p01
+            );
+
+        }
+
+    }
+
+}
+
+
+/* =========================================================
+   TRIANGOLO WARP
+========================================================= */
+
+function drawTriangle(
+    sx0,sy0,
+    sx1,sy1,
+    sx2,sy2,
+    p0,p1,p2
+){
+
+    const denom =
+        sx0*(sy1-sy2)+
+        sx1*(sy2-sy0)+
+        sx2*(sy0-sy1);
+
+
+    if(Math.abs(denom)<.001)return;
+
+
+    const a =
+        (
+            p0.x*(sy1-sy2)+
+            p1.x*(sy2-sy0)+
+            p2.x*(sy0-sy1)
+        )/denom;
+
+
+    const b =
+        (
+            p0.y*(sy1-sy2)+
+            p1.y*(sy2-sy0)+
+            p2.y*(sy0-sy1)
+        )/denom;
+
+
+    const c =
+        (
+            p0.x*(sx2-sx1)+
+            p1.x*(sx0-sx2)+
+            p2.x*(sx1-sx0)
+        )/denom;
+
+
+    const d =
+        (
+            p0.y*(sx2-sx1)+
+            p1.y*(sx0-sx2)+
+            p2.y*(sx1-sx0)
+        )/denom;
+
+
+    const e =
+        (
+            p0.x*(sx1*sy2-sx2*sy1)+
+            p1.x*(sx2*sy0-sx0*sy2)+
+            p2.x*(sx0*sy1-sx1*sy0)
+        )/denom;
+
+
+    const f =
+        (
+            p0.y*(sx1*sy2-sx2*sy1)+
+            p1.y*(sx2*sy0-sx0*sy2)+
+            p2.y*(sx0*sy1-sx1*sy0)
+        )/denom;
+
+
+    ctx.save();
+
+
+    ctx.beginPath();
+
+    ctx.moveTo(p0.x,p0.y);
+
+    ctx.lineTo(p1.x,p1.y);
+
+    ctx.lineTo(p2.x,p2.y);
+
+    ctx.closePath();
+
+    ctx.clip();
+
+
+    ctx.setTransform(
+        a,b,c,d,e,f
     );
 
 
-  ctx.rotate(angle);
+    ctx.drawImage(
+        shirt,
+        0,
+        0
+    );
 
 
-  /*
-    Manteniamo la proporzione
-    della camicia.
-  */
-
-  ctx.globalAlpha = 0.98;
-
-
-  ctx.drawImage(
-    shirt,
-    -shirtWidth / 2,
-    0,
-    shirtWidth,
-    shirtHeight
-  );
-
-
-  ctx.restore();
-
-
-  /*
-    Ridisegniamo le braccia sopra la camicia.
-
-    Questo evita che la camicia rimanga
-    davanti alle braccia.
-  */
-
-  redrawArm(
-    leftShoulder,
-    leftElbow,
-    leftWrist
-  );
-
-  redrawArm(
-    rightShoulder,
-    rightElbow,
-    rightWrist
-  );
+    ctx.restore();
 
 }
 
 
-/* =========================
-   BRACCIA
-========================= */
+/* =========================================================
+   BRACCIA SOPRA LA CAMICIA
+========================================================= */
 
-function redrawArm(shoulder, elbow, wrist) {
+function drawArm(points,a,b){
 
-  if (!shoulder || !elbow || !wrist) {
-    return;
-  }
-
-  const W = canvas.width;
-  const H = canvas.height;
+    if(!points[a] || !points[b])return;
 
 
-  function X(point) {
-    return (1 - point.x) * W;
-  }
-
-  function Y(point) {
-    return point.y * H;
-  }
+    const A=px(points[a]);
+    const B=px(points[b]);
 
 
-  const S = {
-    x: X(shoulder),
-    y: Y(shoulder)
-  };
-
-  const E = {
-    x: X(elbow),
-    y: Y(elbow)
-  };
-
-  const Wp = {
-    x: X(wrist),
-    y: Y(wrist)
-  };
+    const width =
+        Math.max(
+            distance(A,B)*.30,
+            25
+        );
 
 
-  /*
-    Larghezza approssimativa del braccio.
-  */
+    const dx=B.x-A.x;
+    const dy=B.y-A.y;
 
-  const upperWidth = 35;
-  const lowerWidth = 28;
+    const len=Math.sqrt(dx*dx+dy*dy)||1;
 
 
-  function perpendicular(a, b, width) {
-
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-
-    const length =
-      Math.sqrt(dx * dx + dy * dy) || 1;
-
-    return {
-      x: -dy / length * width,
-      y: dx / length * width
-    };
-
-  }
+    const nx=-dy/len*width;
+    const ny=dx/len*width;
 
 
-  const p1 =
-    perpendicular(S, E, upperWidth);
+    ctx.save();
 
-  const p2 =
-    perpendicular(E, Wp, lowerWidth);
+    ctx.beginPath();
 
+    ctx.moveTo(A.x+nx,A.y+ny);
 
-  /*
-    Disegniamo la parte del video
-    corrispondente al braccio.
-  */
+    ctx.lineTo(B.x+nx*.75,B.y+ny*.75);
 
-  ctx.save();
+    ctx.lineTo(B.x-nx*.75,B.y-ny*.75);
 
-  ctx.beginPath();
+    ctx.lineTo(A.x-nx,A.y-ny);
 
-  ctx.moveTo(
-    S.x + p1.x,
-    S.y + p1.y
-  );
+    ctx.closePath();
 
-  ctx.lineTo(
-    E.x + p1.x,
-    E.y + p1.y
-  );
-
-  ctx.lineTo(
-    Wp.x + p2.x,
-    Wp.y + p2.y
-  );
-
-  ctx.lineTo(
-    Wp.x - p2.x,
-    Wp.y - p2.y
-  );
-
-  ctx.lineTo(
-    E.x - p1.x,
-    E.y - p1.y
-  );
-
-  ctx.lineTo(
-    S.x - p1.x,
-    S.y - p1.y
-  );
-
-  ctx.closePath();
-
-  ctx.clip();
+    ctx.clip();
 
 
-  /*
-    Disegniamo il video originale
-    solamente dentro il braccio.
-  */
+    ctx.save();
 
-  ctx.scale(-1, 1);
+    ctx.translate(W,0);
 
-  ctx.drawImage(
-    video,
-    -W,
-    0,
-    W,
-    H
-  );
+    ctx.scale(-1,1);
+
+    ctx.drawImage(
+        video,
+        0,
+        0,
+        W,
+        H
+    );
+
+    ctx.restore();
 
 
-  ctx.restore();
+    ctx.restore();
 
 }
 
 
-/* =========================
-   AVVIO
-========================= */
+/* =========================================================
+   TESTA SOPRA LA CAMICIA
+========================================================= */
 
-shirt.onload = () => {
+function drawHead(points){
 
-  startCamera();
+    const nose=points[0];
+
+    if(!nose)return;
+
+
+    const P=px(nose);
+
+
+    const radius=W*.13;
+
+
+    ctx.save();
+
+    ctx.beginPath();
+
+    ctx.arc(
+        P.x,
+        P.y,
+        radius,
+        0,
+        Math.PI*2
+    );
+
+    ctx.clip();
+
+
+    ctx.save();
+
+    ctx.translate(W,0);
+
+    ctx.scale(-1,1);
+
+    ctx.drawImage(
+        video,
+        0,
+        0,
+        W,
+        H
+    );
+
+    ctx.restore();
+
+
+    ctx.restore();
+
+}
+
+
+/* =========================================================
+   RENDER LOOP
+========================================================= */
+
+function render(){
+
+    if(video.readyState>=2){
+
+        ctx.setTransform(1,0,0,1,0,0);
+
+        drawVideo();
+
+
+        if(lastPose && shirt.complete){
+
+            drawShirt(lastPose);
+
+
+            /*
+               Braccia sopra la camicia
+            */
+
+            drawArm(lastPose,11,13);
+
+            drawArm(lastPose,13,15);
+
+            drawArm(lastPose,12,14);
+
+            drawArm(lastPose,14,16);
+
+
+            /*
+               Testa sopra la camicia
+            */
+
+            drawHead(lastPose);
+
+
+            loading.style.display="none";
+
+        }
+
+    }
+
+
+    requestAnimationFrame(render);
+
+}
+
+
+/* =========================================================
+   START
+========================================================= */
+
+shirt.onload=()=>{
+
+    startCamera();
+
+    render();
 
 };
 
-shirt.onerror = () => {
 
-  loading.innerHTML =
-    "❌ Non trovo <b>camicia.png</b>.<br><br>" +
-    "Controlla che il nome del file sia esattamente:<br>" +
-    "<b>camicia.png</b>";
+shirt.onerror=()=>{
+
+    loading.innerHTML=
+        "❌ Non trovo camicia.png<br><br>" +
+        "Controlla che sia nella stessa cartella di index.html.";
 
 };
 
