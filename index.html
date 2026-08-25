@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camicia e Oltre - Virtual Try On</title>
+<style>
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000}
+#video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+#canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#ui{position:absolute;z-index:20;top:25px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;padding:12px 20px;border-radius:25px;font-family:Arial;text-align:center}
+button{padding:12px 20px;border:0;border-radius:20px;font-size:16px}
+#status{margin-top:7px}
+</style>
+</head>
+<body>
+<video id="video" autoplay playsinline muted></video>
+<canvas id="canvas"></canvas>
+<div id="ui">
+  <button id="start">📷 Apri fotocamera</button>
+  <div id="status">In attesa...</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script>
+const video=document.getElementById('video');
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+const start=document.getElementById('start');
+const status=document.getElementById('status');
+
+let W=1280,H=720,poseData=null;
+
+const shirt=new Image();
+shirt.src='camicia.png?v=5';
+
+shirt.onload=()=>{
+  console.log('camicia.png caricata');
+};
+
+shirt.onerror=()=>{
+  status.textContent='❌ camicia.png non trovata';
+};
+
+const pose=new Pose({
+  locateFile:file=>'https://cdn.jsdelivr.net/npm/@mediapipe/pose/'+file
+});
+
+pose.setOptions({
+  modelComplexity:1,
+  smoothLandmarks:true,
+  enableSegmentation:false,
+  minDetectionConfidence:.5,
+  minTrackingConfidence:.5
+});
+
+pose.onResults(results=>{
+  poseData=results.poseLandmarks||null;
+  status.textContent=poseData?'✅ CORPO RICONOSCIUTO':'🧍 Posizionati davanti alla fotocamera';
+});
+
+async function openCamera(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode:'user',
+        width:{ideal:1280},
+        height:{ideal:720}
+      },
+      audio:false
+    });
+
+    video.srcObject=stream;
+    await video.play();
+
+    W=video.videoWidth||1280;
+    H=video.videoHeight||720;
+
+    canvas.width=W;
+    canvas.height=H;
+
+    start.style.display='none';
+    process();
+  }catch(e){
+    status.textContent='❌ Permesso fotocamera negato';
+    console.error(e);
+  }
+}
+
+async function process(){
+  if(video.readyState>=2){
+    await pose.send({image:video});
+  }
+  requestAnimationFrame(process);
+}
+
+function pt(i){
+  const p=poseData[i];
+  return {
+    x:(1-p.x)*W,
+    y:p.y*H,
+    v:p.visibility??1
+  };
+}
+
+function distance(a,b){
+  return Math.hypot(a.x-b.x,a.y-b.y);
+}
+
+function drawShirt(){
+  if(!poseData || !shirt.complete || !shirt.naturalWidth) return;
+
+  const ls=pt(11);
+  const rs=pt(12);
+  const lh=pt(23);
+  const rh=pt(24);
+
+  if(Math.min(ls.v,rs.v,lh.v,rh.v)<.35) return;
+
+  const shoulderWidth=distance(ls,rs);
+  if(shoulderWidth<50) return;
+
+  /*
+    Versione stabile:
+    la camicia viene posizionata sul rettangolo del busto.
+    Non usiamo ancora la deformazione a mesh.
+  */
+
+  const centerX=(ls.x+rs.x)/2;
+
+  const topY=Math.min(ls.y,rs.y)-shoulderWidth*.20;
+
+  const bottomY=Math.max(lh.y,rh.y)+shoulderWidth*.65;
+
+  const height=bottomY-topY;
+
+  /*
+    La larghezza segue le spalle.
+    Questi due valori sono quelli che regoleremo
+    dopo aver verificato la posizione.
+  */
+  const width=shoulderWidth*1.75;
+
+  /*
+    Correzione dell'inclinazione delle spalle.
+  */
+  const angle=Math.atan2(
+    rs.y-ls.y,
+    rs.x-ls.x
+  );
+
+  ctx.save();
+
+  ctx.translate(centerX,topY);
+  ctx.rotate(angle);
+
+  ctx.globalAlpha=.98;
+
+  ctx.drawImage(
+    shirt,
+    -width/2,
+    0,
+    width,
+    height
+  );
+
+  ctx.restore();
+}
+
+function render(){
+  ctx.clearRect(0,0,W,H);
+  drawShirt();
+  requestAnimationFrame(render);
+}
+
+start.addEventListener('click',openCamera);
+render();
+</script>
+</body>
+</html>
