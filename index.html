@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Camicia e Oltre - Virtual Try On</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:Arial}
+#video,#canvas{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
+#video{transform:scaleX(-1)}#canvas{pointer-events:none}
+#ui{position:fixed;z-index:5;top:24px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.72);color:#fff;padding:12px 18px;border-radius:24px;text-align:center;min-width:210px}
+button{border:0;border-radius:22px;padding:12px 18px;font-size:16px}
+#status{margin-top:7px;font-size:15px}
+</style>
+</head>
+<body>
+<video id="video" autoplay playsinline muted></video><canvas id="canvas"></canvas>
+<div id="ui"><button id="start">📷 Apri fotocamera</button><div id="status">In attesa...</div></div>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script>
+const video=document.getElementById('video'),canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d'),start=document.getElementById('start'),status=document.getElementById('status');
+const shirt=new Image();shirt.src='camicia.png?v=30';let lm=null,W=1,H=1;
+const pose=new Pose({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/pose/'+f});
+pose.setOptions({modelComplexity:1,smoothLandmarks:true,enableSegmentation:false,minDetectionConfidence:.55,minTrackingConfidence:.55});
+pose.onResults(r=>{lm=r.poseLandmarks||null;status.textContent=lm?'✅ CORPO RICONOSCIUTO':'🧍 Inquadra spalle e busto'});
+start.onclick=async()=>{try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});video.srcObject=s;await video.play();W=video.videoWidth||1280;H=video.videoHeight||720;canvas.width=W;canvas.height=H;start.style.display='none';loop()}catch(e){status.textContent='❌ Permesso fotocamera negato'}};
+function P(i){let q=lm[i];return q?{x:(1-q.x)*W,y:q.y*H,v:q.visibility??1}:null}
+function d(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function L(a,b,t){return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}}
+function warp(img,A,B,C,D){
+ const iw=img.naturalWidth,ih=img.naturalHeight,cols=16,rows=24;
+ function T(u,v){return L(L(A,B,u),L(D,C,u),v)}
+ function tri(x0,y0,x1,y1,x2,y2,p0,p1,p2){
+  let den=x0*(y1-y2)+x1*(y2-y0)+x2*(y0-y1);if(Math.abs(den)<.01)return;
+  let a=(p0.x*(y1-y2)+p1.x*(y2-y0)+p2.x*(y0-y1))/den,b=(p0.x*(x2-x1)+p1.x*(x0-x2)+p2.x*(x1-x0))/den,c=(p0.x*(x1*y2-x2*y1)+p1.x*(x2*y0-x0*y2)+p2.x*(x0*y1-x1*y0))/den;
+  let e=(p0.y*(y1-y2)+p1.y*(y2-y0)+p2.y*(y0-y1))/den,f=(p0.y*(x2-x1)+p1.y*(x0-x2)+p2.y*(x1-x0))/den,g=(p0.y*(x1*y2-x2*y1)+p1.y*(x2*y0-x0*y2)+p2.y*(x0*y1-x1*y0))/den;
+  ctx.save();ctx.beginPath();ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.closePath();ctx.clip();
+  ctx.setTransform(a,e,b,f,c,g);ctx.drawImage(img,0,0);ctx.restore();
+ }
+ for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+  let u0=c/cols,u1=(c+1)/cols,v0=r/rows,v1=(r+1)/rows;
+  let A1=T(u0,v0),B1=T(u1,v0),C1=T(u1,v1),D1=T(u0,v1);
+  let sx0=u0*iw,sy0=v0*ih,sx1=u1*iw,sy1=v0*ih,sx2=u1*iw,sy2=v1*ih,sx3=u0*iw,sy3=v1*ih;
+  tri(sx0,sy0,sx1,sy1,sx2,sy2,A1,B1,C1);tri(sx0,sy0,sx2,sy2,sx3,sy3,A1,C1,D1);
+ }
+}
+function draw(){
+ if(!lm||!shirt.complete||!shirt.naturalWidth)return;
+ let ls=P(11),rs=P(12),lh=P(23),rh=P(24);
+ if(!ls||!rs||!lh||!rh||Math.min(ls.v,rs.v,lh.v,rh.v)<.25)return;
+ let sw=d(ls,rs),cx=(ls.x+rs.x)/2;if(sw<40)return;
+ let neckY=Math.min(ls.y,rs.y)-sw*.48;
+ let shoulderLeft={x:ls.x-sw*.16,y:neckY+sw*.20},shoulderRight={x:rs.x+sw*.16,y:neckY+sw*.20};
+ let bottomY=Math.max(lh.y,rh.y)+sw*.18;
+ let bottomLeft={x:lh.x-sw*.12,y:bottomY},bottomRight={x:rh.x+sw*.12,y:bottomY};
+ warp(shirt,shoulderLeft,shoulderRight,bottomRight,bottomLeft);
+}
+function render(){ctx.clearRect(0,0,W,H);draw();requestAnimationFrame(render)}
+async function loop(){if(video.readyState>=2)try{await pose.send({image:video})}catch(e){}requestAnimationFrame(loop)}
+render();
+</script></body></html>
